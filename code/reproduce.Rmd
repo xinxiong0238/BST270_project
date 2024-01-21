@@ -1,0 +1,105 @@
+---
+title: "BST 270 Individual Project"
+author: "Xin Xiong"
+date: "2024-01-21"
+code-fold: true
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Choice of Project
+
+This project goal is to reproduce two figures from FiveThirtyEight's [Congress Today Is Older Than It's Ever Been](https://fivethirtyeight.com/features/aging-congress-boomers/). Specifically, I plan to reproduce the 1) line plot about the median age of the U.S. Senate and U.S. House by Congress from 1919 to 2023; and 2) the stacked cumulative area plot showing share of members in Congress from each generation, 1919 to 2023.
+
+## Required Packages
+
+In order to organize the data into the appropriate format for making figures, there are three R packages [dplyr](https://cran.r-project.org/web/packages/dplyr/index.html), [stringr](https://cran.r-project.org/web/packages/stringr/index.html), and [tidyr](https://cran.r-project.org/web/packages/tidyr/index.html) for preprocessing. To generate interactive figures as in the original post, two additional R packages are loaded ([plotly](https://cran.r-project.org/web/packages/plotly/index.html) and [RColorBrewer](https://cran.r-project.org/web/packages/RColorBrewer/index.html))
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(plotly)
+library(RColorBrewer)
+```
+
+## Data Loading
+Only one dataset is needed to reproduce the two figures, which I have downloaded and stored under the 'data/' folder. Since both figures use 'year' as the x-axis and the related column ``start_date`` chooses date as the unit, I first create a new column by extracting the year information from 'start_date'.
+```{r echo=TRUE, fig.height=5, fig.width=10, message=FALSE, warning=FALSE}
+setwd("~/Library/CloudStorage/OneDrive-HarvardUniversity/Documents/PHD/Course/2024winter/BST270/BST270_project_XX")
+data = read.csv('data/data_aging_congress.csv') %>%
+  mutate(year = str_extract(start_date, '[0-9]{4}'))
+```
+
+
+## Reproduce Figure 1
+The first figure shows the median age of the U.S. Senate and U.S. House by Congress from 1919 to 2023. To aggregate data by year and chamber and calculate the median age, i utilize the ``group_by`` function to group members of Congress by their chamber and the year in which they were seated. Then i use the ``summarise`` function to calculate the median age within each group. This result in 106 different age groups (53 years * 2 chambers).
+
+```{r message=FALSE, warning=FALSE}
+data_1 = data %>% group_by(year, chamber) %>%
+  summarise(median_age = round(median(age_years), 1))
+head(data_1)
+```
+
+I then use ``plot_ly`` to generate the lineplot. The shape is set as 'hv' and the color is defined by different chambers. The figure is identical to the one on the post.
+
+```{r fig.height=5, fig.width=10, message=FALSE, warning=FALSE, paged.print=FALSE}
+ data_1 %>%
+  plot_ly(x = ~year, colors = "Set1") %>%
+  add_trace(y = ~median_age, color = ~chamber, type = 'scatter',
+            mode = 'line', line = list(shape = "hv"))
+```
+
+
+
+## Reproduce Figure 2
+
+Figure 2 shows the share of members in Congress from each generation from 1919 to 2023. To derive the proportion, I first aggregate the data by year and count the total number of Congress members in each Congress. 
+```{r}
+data_tmp = data %>% count(year) 
+```
+
+I then aggregate by year and generation and derive the number of each generation in each Congress.
+```{r}
+data_tmp2 = data %>% count(year, generation) 
+```
+
+By merging the two temporary datasets together aligned by ``year``, I can then derive the proportion of generation.
+```{r}
+data_count = merge(data_tmp, data_tmp2, by = 'year') %>%
+  mutate(prop_gen = round(n.y / n.x * 100, 1))
+```
+
+In order to generate the stacked area plot in the way the post figure has, I transform the long-format ``data_count`` into the wide format, where each generation corresponds to a column. I manually replace the ``NA`` value as 0.
+```{r}
+data_count_wide = pivot_wider(data_count, id_cols = c('year'), names_from = 'generation', values_from = 'prop_gen')
+data_count_wide[is.na(data_count_wide)] = 0
+```
+
+
+In the end, we use ``plot_ly`` and specify ``stackgroup = 'one'`` and ``groupnorm = 'percent'`` to create the stacked cumulative area plot. Generations are added to the figure by adding the ``add_trace`` and specifying ``y`` as the target generation. The resulting figure is identical to the one shown in the post.
+```{r fig.height=5, fig.width=10}
+color = brewer.pal(n = 10, 'Paired')
+fig <- plot_ly(data_count_wide, x = ~year, y = ~Progressive, name = 'Progressive', type = 'scatter', mode = 'none', stackgroup = 'one', groupnorm = 'percent', fillcolor = color[1])
+fig <- fig %>% add_trace(y = ~Missionary, name = 'Missionary', fillcolor = color[2])
+fig <- fig %>% add_trace(y = ~Lost, name = 'Lost', fillcolor = color[3])
+fig <- fig %>% add_trace(y = ~Greatest, name = 'Greatest', fillcolor = color[4])
+fig <- fig %>% add_trace(y = ~Silent, name = 'Silent', fillcolor = color[5])
+fig <- fig %>% add_trace(y = ~Boomers, name = 'Boomers', fillcolor = color[6])
+fig <- fig %>% add_trace(y = ~`Gen X`, name = 'Gen X', fillcolor = color[7])
+fig <- fig %>% add_trace(y = ~Millennial, name = 'Millennial', fillcolor = color[8])
+fig <- fig %>% add_trace(y = ~Gilded, name = 'Gilded', fillcolor = color[9])
+fig <- fig %>% add_trace(y = ~`Gen Z`, name = 'Gen Z', fillcolor = color[10])
+
+fig <- fig %>% layout(title = 'Share of members in Congress from each generation, 1919 to 2023',
+         xaxis = list(title = "Year",
+                      showgrid = FALSE),
+         yaxis = list(title = "Proportion",
+                      showgrid = TRUE,
+                      ticksuffix = '%'))
+
+fig
+```
